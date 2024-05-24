@@ -14,38 +14,55 @@ class Server:
         win_height = 950
         self.window = pygame.display.set_mode((win_width, win_height))
         pygame.display.set_caption('Evolution')
-        self.delay = 0.2
+        self.delay = 0.25
         self.running = True
         # среда
         self.env_width = 2
         self.env_height = 2
         self.environment = [['' for _ in range(self.env_width)] for _ in range(self.env_height)]  # environment[y][x]
+        self.free_cells = dict()
+        for i in range(self.env_height):
+            self.free_cells[i] = set()
+            for j in range(self.env_width):
+                self.free_cells[i].add(j)
         self.cell_size = win_width // self.env_width
         # очередь обработки
-        self.processing_queue = []
+        self.processing_queue = ['server']
         self.processing_index = 0
         # объекты
         self.objects = Objects()
         self.generate_cell()
 
     def generate_cell(self, y=-1, x=-1):
+        if len(self.free_cells.keys()) == 0:
+            print('Error: no free cells')
         if y == -1:
-            y = random.randint(0, self.env_height - 1)
+            y = random.choice(list(self.free_cells.keys()))
         if x == -1:
-            x = random.randint(0, self.env_width - 1)
+            x = random.choice(list(self.free_cells[y]))
+
         key = generate_key(self.objects.cells.keys())
         self.objects.cells[key] = Cell(y, x)
         self.environment[y][x] = key
+        self.free_cells[y].remove(x)
+        if len(self.free_cells[y]) == 0:
+            del self.free_cells[y]
         self.processing_queue.append(key)
 
     def generate_food(self, y=-1, x=-1, energy=6):
+        if len(self.free_cells.keys()) == 0:
+            print('Error: no free cells')
         if y == -1:
-            y = random.randint(0, self.env_height - 1)
+            y = random.choice(list(self.free_cells.keys()))
         if x == -1:
-            x = random.randint(0, self.env_width - 1)
+            x = random.choice(list(self.free_cells[y]))
+
         key = generate_key(self.objects.food.keys())
         self.objects.food[key] = Food(y, x, energy)
         self.environment[y][x] = key
+        self.free_cells[y].remove(x)
+        if len(self.free_cells[y]) == 0:
+            del self.free_cells[y]
 
     def run(self):
         while self.running:
@@ -70,17 +87,27 @@ class Server:
         self.processing_index += 1
         if self.processing_index >= len(self.processing_queue):
             self.processing_index = 0
-        while len(self.processing_queue) > 0 and self.processing_queue[self.processing_index] not in self.objects.cells.keys():
+        while len(self.processing_queue) > 0 and self.processing_queue[self.processing_index] != 'server' and \
+                self.processing_queue[self.processing_index] not in self.objects.cells.keys():
             self.processing_queue.pop(self.processing_index)
             if self.processing_index >= len(self.processing_queue):
                 self.processing_index = 0
 
         if len(self.processing_queue) > 0:
-            self.objects.cells[self.processing_queue[self.processing_index]].energy -= 1
-            if self.objects.cells[self.processing_queue[self.processing_index]].energy <= 0:
-                self.generate_food(self.objects.cells[self.processing_queue[self.processing_index]].y,
-                                   self.objects.cells[self.processing_queue[self.processing_index]].x, 1)
-                del self.objects.cells[self.processing_queue[self.processing_index]]
+            if self.processing_queue[self.processing_index] == 'server':
+                if len(self.free_cells.keys()) > 0:
+                    self.generate_food()
+            else:
+                self.objects.cells[self.processing_queue[self.processing_index]].energy -= 1
+                if self.objects.cells[self.processing_queue[self.processing_index]].energy <= 0:
+                    y = self.objects.cells[self.processing_queue[self.processing_index]].y
+                    x = self.objects.cells[self.processing_queue[self.processing_index]].x
+                    self.environment[y][x] = ''
+                    if y not in self.free_cells.keys():
+                        self.free_cells[y] = set()
+                    self.free_cells[y].add(x)
+                    del self.objects.cells[self.processing_queue[self.processing_index]]
+                    self.generate_food(y, x, 1)
 
     def draw(self):
         self.window.fill(self.color_cyan)
